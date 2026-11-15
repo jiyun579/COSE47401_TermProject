@@ -1,0 +1,11 @@
+.idea
+*.tar.xz
+*.pyc
+wandb
+checkpoint/*.pth.tr
+venv/
+data/
+*.npz
+*.pkl
+*.pth
+*.bin
