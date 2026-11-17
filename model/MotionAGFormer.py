@@ -4,7 +4,7 @@ import torch
 from torch import nn
 from timm.models.layers import DropPath
 
-from model.modules.attention import Attention
+from model.modules.attention import Attention, MultiScaleTemporalAttention
 from model.modules.graph import GCN
 from model.modules.mlp import MLP
 from model.modules.tcn import MultiScaleTCN
@@ -22,8 +22,12 @@ class AGFormerBlock(nn.Module):
         super().__init__()
         self.norm1 = nn.LayerNorm(dim)
         if mixer_type == 'attention':
-            self.mixer = Attention(dim, dim, num_heads, qkv_bias, qk_scale, attn_drop,
-                                   proj_drop=drop, mode=mode)
+            if mode == 'temporal':
+                self.mixer = MultiScaleTemporalAttention(dim, dim, num_heads, qkv_bias, qk_scale,
+                                                         attn_drop, proj_drop=drop)
+            else:
+                self.mixer = Attention(dim, dim, num_heads, qkv_bias, qk_scale, attn_drop,
+                                       proj_drop=drop, mode=mode)
         elif mixer_type == 'graph':
             self.mixer = GCN(dim, dim,
                              num_nodes=17 if mode == 'spatial' else n_frames,
