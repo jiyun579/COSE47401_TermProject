@@ -17,6 +17,7 @@ from loss.pose3d import acc_error as calculate_acc_err
 from data.const import H36M_JOINT_TO_LABEL, H36M_UPPER_BODY_JOINTS, H36M_LOWER_BODY_JOINTS, H36M_1_DF, H36M_2_DF, \
     H36M_3_DF
 from data.reader.h36m import DataReaderH36M
+from AthletePose3D.pose_3d.datareader_ap3d import DataReaderH36M as DataReaderAP3D
 from data.reader.motion_dataset import MotionDataset3D
 from utils.data import flip_data
 from utils.tools import set_random_seed, get_config, print_args, create_directory_if_not_exists
@@ -157,9 +158,10 @@ def evaluate(args, model, test_loader, datareader, device):
                   's_09_act_10_subact_02',
                   's_09_act_13_subact_01']
     for idx in range(len(action_clips)):
-        source = source_clips[idx][0][:-6]
-        if source in block_list:
-            continue
+        if "AP3D-81" not in args.subset_list:
+            source = source_clips[idx][0][:-6]
+            if source in block_list:
+                continue
         frame_list = frame_clips[idx]
         action = action_clips[idx][0]
         factor = factor_clips[idx][:, None, None]
@@ -249,9 +251,30 @@ def train(args, opts):
     train_loader = DataLoader(train_dataset, shuffle=True, **common_loader_params)
     test_loader = DataLoader(test_dataset, shuffle=False, **common_loader_params)
 
-    datareader = DataReaderH36M(n_frames=args.n_frames, sample_stride=1,
-                                data_stride_train=args.n_frames // 3, data_stride_test=args.n_frames,
-                                dt_root='data/motion3d', dt_file=args.dt_file)  # Used for H36m evaluation
+    if "AP3D-81" in args.subset_list:
+        datareader = DataReaderAP3D(
+            n_frames=args.n_frames,
+            sample_stride=1,
+            data_stride_train=args.n_frames // 3,
+            data_stride_test=args.n_frames,
+            dt_root=args.ap3d_raw_root,
+            valid_only=True,
+        )
+        _, test_ids = datareader.get_split_id()
+        if len(test_ids) != len(test_dataset):
+            raise RuntimeError(
+                f"AP3D clip count mismatch: "
+                f"reader={len(test_ids)}, dataset={len(test_dataset)}"
+            )
+    else:
+        datareader = DataReaderH36M(
+            n_frames=args.n_frames,
+            sample_stride=1,
+            data_stride_train=args.n_frames // 3,
+            data_stride_test=args.n_frames,
+            dt_root="data/motion3d",
+            dt_file=args.dt_file,
+        )
 
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     model = load_model(args)

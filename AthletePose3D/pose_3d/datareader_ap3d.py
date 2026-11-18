@@ -63,7 +63,7 @@ def split_clips(vid_list, n_frames, data_stride):
 
 class DataReaderH36M(object):
     def __init__(self, n_frames, sample_stride, data_stride_train, data_stride_test, read_confidence=True,
-                 dt_root='data/motion3d'):
+                 dt_root='data/motion3d', valid_only=False):
         self.gt_trainset = None
         self.gt_testset = None
         self.split_id_train = None
@@ -72,7 +72,7 @@ class DataReaderH36M(object):
         train_file = 'train.pkl'
         valid_file = 'valid.pkl'
         #read the data
-        dt_train = read_pkl('%s/%s' % (dt_root, train_file))
+        dt_train = [] if valid_only else read_pkl('%s/%s' % (dt_root, train_file))
         dt_valid = read_pkl('%s/%s' % (dt_root, valid_file))
         self.dt_dataset = {'train': dt_train, 'test': dt_valid}
         self.dt_dataset = self.preprocess(self.dt_dataset)
@@ -129,7 +129,7 @@ class DataReaderH36M(object):
             return self.test_hw
         test_hw = np.zeros((len(self.dt_dataset['test']['camera_name']), 2))
         for idx, camera_name in enumerate(self.dt_dataset['test']['camera_name']):
-            res_w, res_h = self.dt_dataset['train']['video_w'][idx], self.dt_dataset['train']['video_h'][idx]
+            res_w, res_h = self.dt_dataset['test']['video_w'][idx], self.dt_dataset['test']['video_h'][idx]
             test_hw[idx] = res_w, res_h
         self.test_hw = test_hw
         return test_hw
