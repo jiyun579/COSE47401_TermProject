@@ -6,6 +6,22 @@ from torch import nn
 CONNECTIONS = {10: [9], 9: [8, 10], 8: [7, 9], 14: [15, 8], 15: [16, 14], 11: [12, 8], 12: [13, 11],
                7: [0, 8], 0: [1, 7], 1: [2, 0], 2: [3, 1], 4: [5, 0], 5: [6, 4], 16: [15], 13: [12], 3: [2], 6: [5]}
 
+# [추가] 대칭 관절 연결
+SYM_CONNECTIONS = { 
+    1: [4], 4: [1], # 양쪽 엉덩이 (Hip) 
+    2: [5], 5: [2], # 양쪽 무릎 (Knee) 
+    3: [6], 6: [3], # 양쪽 발목 (Ankle) 
+    11: [14], 14: [11], # 양쪽 어깨 (Shoulder) 
+    12: [15], 15: [12], # 양쪽 팔꿈치 (Elbow) 
+    13: [16], 16: [13] # 양쪽 손목 (Wrist) 
+} 
+
+# [추가] 코어-말단 관절 연결
+CORE_CONNECTIONS = { 
+    0: [3, 6, 13, 16], # 골반 <-> 양 발목, 양 손목 
+    8: [3, 6, 13, 16], # 목/상체 중심 <-> 양 발목, 양 손목 
+    3: [0, 8], 6: [0, 8], 13: [0, 8], 16: [0, 8] 
+}
 
 class GCN(nn.Module):
     def __init__(self, dim_in, dim_out, num_nodes, neighbour_num=4, mode='spatial', use_temporal_similarity=True,
@@ -40,6 +56,23 @@ class GCN(nn.Module):
 
         if mode == 'spatial':
             self.adj = self._init_spatial_adj()
+
+            #가중치
+            self.W3 = nn.Linear(dim_in, dim_out, bias=False)
+            self.W4 = nn.Linear(dim_in, dim_out, bias=False)
+
+            #행렬 저장
+            sym_adj = self._init_relation_adj(SYM_CONNECTIONS)
+            core_adj = self._init_relation_adj(CORE_CONNECTIONS)
+
+            self.register_buffer("sym_adj", sym_adj, persistent=False)
+            self.register_buffer("core_adj", core_adj, persistent=False)
+
+            #sigmoid 계산 시 0인데 0.5로 계산되는 것을 막는다
+            relation_mask = (sym_adj.any(dim=1) | core_adj.any(dim=1))
+            self.register_buffer(
+                "relation_mask", relation_mask[:, None], persistent=False
+            )
         elif mode == 'temporal' and not self.use_temporal_similarity:
             self.adj = self._init_temporal_adj(temporal_connection_len)
 
@@ -58,6 +91,15 @@ class GCN(nn.Module):
             for j in connected_nodes:
                 adj[i, j] = 1
         return adj
+
+    def _init_relation_adj(self, connections):
+        adj = torch.zeros(self.num_nodes, self.num_nodes)
+
+        for joint, neighbors in connections.items():
+            adj[joint, neighbors] = 1
+
+        degree_inv_sqrt = adj.sum(dim=1).clamp_min(1).rsqrt()
+        return degree_inv_sqrt[:, None] * adj * degree_inv_sqrt[None, :] #얼마나 영향을 받는지 계수를 계산한다
 
     def _init_temporal_adj(self, connection_length):
         """Connects each joint to itself and the same joint withing next `connection_length` frames."""
@@ -118,11 +160,22 @@ class GCN(nn.Module):
         norm_adj = self.normalize_digraph(adj)
         aggregate = norm_adj @ self.V(x)
 
+        if self.mode == 'spatial': #대칭, 코어-말단으로 연결된 특징 가져와서 시그모이드
+            sym_features = self.sym_adj @ x
+            core_features = self.core_adj @ x
+
+            relation_logits = self.W3(sym_features) + self.W4(core_features)
+            relation_update = torch.sigmoid(relation_logits) * self.relation_mask
+
         if self.dim_in == self.dim_out:
             x = self.relu(x + self.batch_norm(aggregate + self.U(x)))
         else:
             x = self.relu(self.batch_norm(aggregate + self.U(x)))
 
-        x = x.reshape(-1, t, j, self.dim_out) if self.mode == 'spatial' \
-            else x.reshape(-1, j, t, self.dim_out).transpose(1, 2)
+        if self.mode == 'spatial':
+            x = x + relation_update #새로 만든 특징 더해주기
+            x = x.reshape(b, t, j, self.dim_out)
+        else:
+            x = x.reshape(b, j, t, self.dim_out).transpose(1, 2)
+
         return x
