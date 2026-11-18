@@ -161,10 +161,14 @@ class GCN(nn.Module):
         aggregate = norm_adj @ self.V(x)
 
         if self.mode == 'spatial': #대칭, 코어-말단으로 연결된 특징 가져와서 시그모이드
+            #대칭관절 / 코어-말단관절 가중치를 어느 정도 반영할지, 0 < 반영안함
+            SYM_weight = 1
+            CORE_weight = 1
+
             sym_features = self.sym_adj @ x
             core_features = self.core_adj @ x
 
-            relation_logits = self.W3(sym_features) + self.W4(core_features)
+            relation_logits = SYM_weight * self.W3(sym_features) + CORE_weight * self.W4(core_features)
             relation_update = torch.sigmoid(relation_logits) * self.relation_mask
 
         if self.dim_in == self.dim_out:
