@@ -68,7 +68,7 @@ class GCN(nn.Module):
             self.register_buffer("sym_adj", sym_adj, persistent=False)
             self.register_buffer("core_adj", core_adj, persistent=False)
 
-            #sigmoid 계산 시 0인데 0.5로 계산되는 것을 막는다
+            #sigmoid 계산 시 0인데 0.5로 계산되는 것을 막는다(관절 간 연결이 없는데도 가중치가 추가 연산되는 것을 방지함)
             relation_mask = (sym_adj.any(dim=1) | core_adj.any(dim=1))
             self.register_buffer(
                 "relation_mask", relation_mask[:, None], persistent=False
